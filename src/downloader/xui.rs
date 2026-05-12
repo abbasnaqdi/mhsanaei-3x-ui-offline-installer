@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use console::style;
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::time::Instant;
+
 use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 
@@ -107,8 +107,8 @@ pub async fn download(
 
 /// Fetch the latest release tag from GitHub API.
 async fn fetch_latest_tag(client: &reqwest::Client) -> Result<String> {
-    let mut first_failure: Option<Instant> = None;
-    let mut warned = false;
+    let mut attempts = 0;
+    const MAX_RETRIES: u32 = 3;
 
     loop {
         match client.get(GITHUB_API).send().await {
@@ -118,18 +118,20 @@ async fn fetch_latest_tag(client: &reqwest::Client) -> Result<String> {
                         return Ok(s.to_string());
                     }
                 }
-                // If parsing fails, fall through to Err case handling
             }
-            Err(_) => {}
-        }
-
-        if first_failure.is_none() {
-            first_failure = Some(Instant::now());
-        }
-        if let Some(ff) = first_failure {
-            if ff.elapsed().as_secs() >= 60 && !warned {
-                println!("  {} Warning: Still trying, but internet seems down. Please check your connection or press Ctrl+C to exit.", style("⚠️").yellow());
-                warned = true;
+            Err(e) => {
+                if attempts < MAX_RETRIES {
+                    attempts += 1;
+                    println!(
+                        "  {} Connection error ({}). Retrying ({}/{})...",
+                        style("ℹ").yellow(),
+                        if e.is_timeout() { "Timeout" } else { "Network" },
+                        attempts,
+                        MAX_RETRIES
+                    );
+                } else {
+                    return Err(anyhow::anyhow!("Failed to fetch latest tag after {} retries: {}", MAX_RETRIES, e));
+                }
             }
         }
         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -161,22 +163,23 @@ pub async fn download_with_progress(
     dest: &str,
     label: &str,
 ) -> Result<()> {
-    let mut first_failure: Option<Instant> = None;
-    let mut warned = false;
-
+    let mut attempts = 0;
+    
     loop {
         match download_with_progress_inner(client, url, dest, label).await {
             Ok(_) => return Ok(()),
-            Err(_) => {
-                if first_failure.is_none() {
-                    first_failure = Some(Instant::now());
+            Err(e) => {
+                attempts += 1;
+                if attempts > 10 { // Give up after 10 full failures for actual files
+                     return Err(e);
                 }
-                if let Some(ff) = first_failure {
-                    if ff.elapsed().as_secs() >= 60 && !warned {
-                        println!("  {} Warning: Still trying, but internet seems down. Please check your connection or press Ctrl+C to exit.", style("⚠️").yellow());
-                        warned = true;
-                    }
-                }
+                
+                println!(
+                    "  {} Download interrupted ({}). Retrying... ({})",
+                    style("ℹ").yellow(),
+                    e,
+                    attempts
+                );
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             }
         }

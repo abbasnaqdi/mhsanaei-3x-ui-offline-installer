@@ -193,7 +193,7 @@ pub fn build_client(proxy: &Option<ProxyConfig>) -> Result<reqwest::Client> {
     let proxy_url = proxy.as_ref().map(|p| p.url.as_str());
     build_client_inner(
         proxy_url.unwrap_or(""),
-        Duration::from_secs(30),
+        Duration::from_secs(60),
     )
 }
 

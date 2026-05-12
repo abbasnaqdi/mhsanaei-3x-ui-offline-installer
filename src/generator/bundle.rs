@@ -121,13 +121,3 @@ __BINARY_DATA_BELOW__
 
     Ok(())
 }
-
-/// Create a standard .tar.gz archive of the bundle.
-pub fn create_tar_gz(bundle_dir: &str, output_path: &str) -> Result<()> {
-    let f = File::create(output_path)?;
-    let enc = GzEncoder::new(f, Compression::best());
-    let mut tar = Builder::new(enc);
-    tar.append_dir_all(".", bundle_dir)?;
-    tar.finish()?;
-    Ok(())
-}

@@ -174,16 +174,6 @@ impl Manifest {
         Ok(())
     }
 
-    /// Mark step as failed.
-    pub fn mark_failed(&mut self, bundle_dir: &str, step: &str, note: &str) -> Result<()> {
-        if let Some(s) = self.steps.get_mut(step) {
-            s.status = StepStatus::Failed;
-            s.note   = Some(note.to_string());
-        }
-        self.save(bundle_dir)?;
-        Ok(())
-    }
-
     /// Returns true if the step has status Done and all its files pass sha256 check.
     pub fn step_is_valid(&self, bundle_dir: &str, step: &str) -> bool {
         let Some(s) = self.steps.get(step) else { return false };
@@ -200,16 +190,11 @@ impl Manifest {
         true
     }
 
-    /// Returns true if step is Done (file check not needed — e.g. install_sh).
     pub fn step_is_done(&self, step: &str) -> bool {
         self.steps
             .get(step)
             .map(|s| s.status == StepStatus::Done)
             .unwrap_or(false)
-    }
-
-    pub fn get_step(&self, step: &str) -> Option<&BundleStep> {
-        self.steps.get(step)
     }
 }
 

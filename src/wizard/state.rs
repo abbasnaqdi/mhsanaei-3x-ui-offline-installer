@@ -1,5 +1,6 @@
 use crate::proxy::ProxyConfig;
 
+
 /// All configuration collected from the user during the wizard phase.
 /// This is the single source of truth passed to downloader and generator.
 #[derive(Debug, Clone)]
@@ -74,23 +75,6 @@ impl TargetOs {
             TargetOs::OpenSuse   => "OpenSUSE",
         }
     }
-
-    /// The ID string used in /etc/os-release
-    pub fn release_id(&self) -> &'static str {
-        match self {
-            TargetOs::Ubuntu     => "ubuntu",
-            TargetOs::Debian     => "debian",
-            TargetOs::CentOs     => "centos",
-            TargetOs::Fedora     => "fedora",
-            TargetOs::AlmaLinux  => "almalinux",
-            TargetOs::Rocky      => "rocky",
-            TargetOs::Rhel       => "rhel",
-            TargetOs::Alpine     => "alpine",
-            TargetOs::Arch       => "arch",
-            TargetOs::Manjaro    => "manjaro",
-            TargetOs::OpenSuse   => "opensuse-leap",
-        }
-    }
 }
 
 // ─── Architecture ─────────────────────────────────────────────────────────────
@@ -153,15 +137,6 @@ pub enum PackageMode {
 pub enum XuiVersion {
     Latest,
     Specific(String), // e.g. "v2.5.1"
-}
-
-impl XuiVersion {
-    pub fn tag(&self) -> Option<&str> {
-        match self {
-            XuiVersion::Latest       => None,
-            XuiVersion::Specific(v)  => Some(v.as_str()),
-        }
-    }
 }
 
 // ─── SSL ──────────────────────────────────────────────────────────────────────

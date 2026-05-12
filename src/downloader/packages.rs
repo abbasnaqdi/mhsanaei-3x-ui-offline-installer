@@ -50,7 +50,7 @@ pub async fn download(
 
     for pkg in &packages {
         let result = match mirror.format {
-            PkgFormat::Deb => download_deb(&client, pkg, mirror.mirror_base, pkg_dir).await,
+            PkgFormat::Deb => download_deb(&client, pkg, mirror.mirror_base, pkg_dir, config.arch.deb_arch()).await,
             PkgFormat::Rpm => download_rpm(&client, pkg, mirror.mirror_base, pkg_dir).await,
             PkgFormat::Apk => download_apk(&client, pkg, mirror.mirror_base, pkg_dir).await,
         };
@@ -105,11 +105,13 @@ async fn download_deb(
     pkg: &str,
     _mirror_base: &str,
     dest_dir: &str,
+    arch: &str,
 ) -> Result<Option<String>> {
-    let api_url = format!("https://packages.ubuntu.com/jammy/{}/download", pkg);
+    // The URL must include the architecture, otherwise packages.ubuntu.com returns an error
+    let api_url = format!("https://packages.ubuntu.com/jammy/{}/{}/download", arch, pkg);
 
     if let Ok(Some(body)) = fetch_html_with_retry(client, &api_url).await {
-        if let Some(url) = extract_deb_url(&body, "amd64")
+        if let Some(url) = extract_deb_url(&body, arch)
             .or_else(|| extract_deb_url(&body, "all"))
         {
             let filename = url.split('/').last().unwrap_or(pkg).to_string();

@@ -115,6 +115,17 @@ impl TargetArch {
         }
     }
 
+    /// Debian/Ubuntu package architecture name
+    pub fn deb_arch(&self) -> &'static str {
+        match self {
+            TargetArch::Amd64  => "amd64",
+            TargetArch::Arm64  => "arm64",
+            TargetArch::Armv7  => "armhf",
+            TargetArch::I386   => "i386",
+            TargetArch::S390x  => "s390x",
+        }
+    }
+
     pub fn display_name(&self) -> &'static str {
         match self {
             TargetArch::Amd64  => "amd64 (x86_64) — Most common",

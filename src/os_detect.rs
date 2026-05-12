@@ -46,7 +46,7 @@ pub fn mirror_info(os: &TargetOs) -> Option<PkgMirrorInfo> {
             format: PkgFormat::Deb,
         }),
         TargetOs::AlmaLinux | TargetOs::Rocky => Some(PkgMirrorInfo {
-            mirror_base: "https://dl.rockylinux.org/pub/rocky/9/AppStream/x86_64/os/Packages",
+            mirror_base: "https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os/Packages",
             format: PkgFormat::Rpm,
         }),
         TargetOs::Fedora => Some(PkgMirrorInfo {
@@ -67,6 +67,9 @@ pub fn required_packages(os: &TargetOs) -> Vec<&'static str> {
         TargetOs::Alpine => vec!["dcron", "curl", "tar", "tzdata", "socat", "ca-certificates", "openssl"],
         TargetOs::Arch | TargetOs::Manjaro => vec!["cronie", "curl", "tar", "tzdata", "socat", "ca-certificates", "openssl"],
         TargetOs::OpenSuse => vec!["cron", "curl", "tar", "timezone", "socat", "ca-certificates", "openssl"],
+        TargetOs::AlmaLinux | TargetOs::Rocky | TargetOs::Rhel | TargetOs::Fedora | TargetOs::CentOs => {
+            vec!["cronie", "curl", "tar", "tzdata", "socat", "ca-certificates", "openssl"]
+        }
         _ => vec!["cron", "curl", "tar", "tzdata", "socat", "ca-certificates", "openssl"],
     }
 }
@@ -100,7 +103,7 @@ fi"#.to_string()
 }
 
 /// Returns the offline install command (install from ./packages/)
-pub fn install_command_offline(os: &TargetOs, format: &PkgFormat) -> String {
+pub fn install_command_offline(_os: &TargetOs, format: &PkgFormat) -> String {
     match format {
         PkgFormat::Deb => {
             r#"dpkg -i ./packages/*.deb 2>/dev/null || true

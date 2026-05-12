@@ -6,6 +6,7 @@ mod manifest;
 mod proxy;
 mod resume;
 mod ui;
+mod test_downloader;
 
 use anyhow::Result;
 use console::style;
@@ -15,6 +16,12 @@ use resume::{ResumeAction, detect_existing_bundle, run_resume_mode};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // ── Handle CLI arguments ──────────────────────────────────────────────────
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--test-packages") {
+        return test_downloader::test_all_mirrors().await;
+    }
+
     print_banner();
 
     // Default output directory (may change after wizard)
@@ -74,14 +81,51 @@ async fn run_full_wizard() -> Result<()> {
     let proxy_cfg = proxy::ask_proxy()?;
     config.proxy = proxy_cfg;
 
+    use anyhow::Context;
     let out = config.output_dir.clone();
-    std::fs::create_dir_all(&out)?;
+    std::fs::create_dir_all(&out)
+        .with_context(|| format!("Failed to create output directory: {}", out))?;
 
     // Phase 3: Create fresh manifest
     let mut manifest = Manifest::new(&config);
-    manifest.save(&out)?;
+    manifest.save(&out)
+        .with_context(|| format!("Failed to save initial manifest in: {}", out))?;
 
-    run_download_and_generate(&config, &mut manifest, &out).await
+    run_download_and_generate(&config, &mut manifest, &out).await?;
+
+    print_success_banner(&config);
+    Ok(())
+}
+
+fn print_success_banner(config: &crate::wizard::state::BuildConfig) {
+    use crate::wizard::state::OutputKind;
+    
+    println!();
+    println!("{}", style("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━").green().bold());
+    println!("{}", style("   ✨  OFFLINE BUNDLE CREATED SUCCESSFULLY!").green().bold());
+    println!("{}", style("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━").green().bold());
+    println!();
+
+    if config.output_kind == OutputKind::Sfx {
+        let sfx_name = format!("{}.sh", config.output_dir.trim_end_matches('/'));
+        println!("  {}  Installer File:  {}", style("📦").cyan(), style(&sfx_name).yellow().bold());
+        println!("  {}  Mode:            {}", style("🚀").cyan(), style("Self-Extracting Standalone").cyan());
+        println!();
+        println!("{}", style("  Important Instructions:").bold().underlined());
+        println!("  1. You only need to transfer {} to your target server.", style(&sfx_name).yellow().bold());
+        println!("  2. Run it with: {} or {}", style(format!("bash {}", sfx_name)).white().bold(), style(format!("./{}", sfx_name)).white().bold());
+        println!("  3. The folder {} is a local copy for your reference.", style(&config.output_dir).dim());
+    } else {
+        println!("  {}  Bundle Location: {}", style("📁").cyan(), style(&config.output_dir).yellow().bold());
+        println!("  {}  Mode:            {}", style("📂").cyan(), style("Standard Folder").cyan());
+        println!();
+        println!("{}", style("  Instructions:").bold().underlined());
+        println!("  1. Transfer the entire {} folder to your target server.", style(&config.output_dir).yellow().bold());
+        println!("  2. Run {} inside that folder.", style("bash install.sh").white().bold());
+    }
+
+    println!();
+    println!("{}", style("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━").green().bold());
 }
 
 // ─── Download + Generate (shared by full wizard and resume) ──────────────────

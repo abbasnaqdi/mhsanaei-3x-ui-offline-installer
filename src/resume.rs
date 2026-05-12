@@ -9,7 +9,7 @@ use crate::manifest::{
     STEP_INSTALL_SH, STEP_PACKAGES, STEP_SERVICE_FILE,
     STEP_SSL, STEP_XUI_BINARY, STEP_XUI_SH,
 };
-use crate::wizard::state::{BuildConfig, SslConfig};
+use crate::wizard::state::BuildConfig;
 use crate::generator;
 
 // ─── Public API ──────────────────────────────────────────────────────────────

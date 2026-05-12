@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
-use std::path::Path;
+
 
 use crate::wizard::state::BuildConfig;
 
@@ -109,10 +109,12 @@ impl Manifest {
     }
 
     pub fn save(&mut self, bundle_dir: &str) -> Result<()> {
+        use anyhow::Context;
         self.updated_at = Utc::now();
         let path = format!("{}/{}", bundle_dir, MANIFEST_FILE);
         let data = serde_json::to_string_pretty(self)?;
-        fs::write(&path, data)?;
+        fs::write(&path, data)
+            .with_context(|| format!("Failed to write manifest file at: {}", path))?;
         Ok(())
     }
 

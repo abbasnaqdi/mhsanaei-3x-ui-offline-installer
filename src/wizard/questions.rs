@@ -160,7 +160,62 @@ pub async fn run() -> Result<BuildConfig> {
     let out_sel = Select::with_theme(&theme).with_prompt("How would you like to receive the bundle?").items(&out_items).default(0).interact()?;
     let output_kind = if out_sel == 0 { OutputKind::Sfx } else { OutputKind::Folder };
 
-    let output_dir: String = Input::with_theme(&theme).with_prompt("Storage Path").default("./xui-bundle".into()).interact_text()?;
+    let output_dir: String = Input::with_theme(&theme)
+        .with_prompt("Storage Path")
+        .default("./xui-bundle".into())
+        .validate_with(|input: &String| -> Result<(), &str> {
+            let path = input.trim();
+            if path.is_empty() { return Err("Path cannot be empty"); }
+            
+            let p = std::path::Path::new(path);
+            
+            // Check if we can write to the parent directory
+            let mut current = p;
+            while let Some(parent) = current.parent() {
+                if parent.as_os_str().is_empty() { break; }
+                if parent.exists() {
+                    if parent.is_dir() {
+                        // Check if writable
+                        if let Ok(metadata) = std::fs::metadata(parent) {
+                            if metadata.permissions().readonly() {
+                                return Err("Selected path is in a read-only directory");
+                            }
+                        }
+                        // Try to create a temporary directory inside to be 100% sure
+                        let test_dir = parent.join(".xui_write_test");
+                        if std::fs::create_dir(&test_dir).is_err() {
+                            return Err("Permission denied: Cannot write to this directory");
+                        }
+                        let _ = std::fs::remove_dir(test_dir);
+                        return Ok(());
+                    } else {
+                        return Err("Parent path exists but is not a directory");
+                    }
+                }
+                current = parent;
+            }
+
+            // If we reached here, it's either relative or root
+            if path.starts_with('/') {
+                // Testing root access
+                if std::fs::metadata("/").is_ok() {
+                    let test_dir = std::path::Path::new("/.xui_write_test");
+                    if std::fs::create_dir(test_dir).is_err() {
+                        return Err("Permission denied: You do not have write access to the root (/) directory. Use a relative path like ./output");
+                    }
+                    let _ = std::fs::remove_dir(test_dir);
+                }
+            }
+
+            Ok(())
+        })
+        .interact_text()?;
+
+    let output_dir = output_dir.trim().to_string();
+    let abs_path = std::fs::canonicalize(std::path::Path::new(&output_dir))
+        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(&output_dir));
+    
+    println!("  {} Will save to: {}", style("→").dim(), style(abs_path.display()).cyan());
 
     // ── Final Confirm ────────────────────────────────────────────────────────
     println!("\n{}", style("━".repeat(50)).dim());

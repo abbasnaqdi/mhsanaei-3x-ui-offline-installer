@@ -74,7 +74,14 @@ pub fn ask_proxy() -> Result<Option<ProxyConfig>> {
             .with_prompt("Proxy Address")
             .default(default_url.to_string())
             .interact_text()?;
-        let raw = raw.trim().to_string();
+        let mut raw = raw.trim().to_string();
+
+        // If no protocol is provided, prepend based on kind
+        if !raw.contains("://") {
+            let prefix = if kind == ProxyKind::Socks5 { "socks5://" } else { "http://" };
+            raw = format!("{}{}", prefix, raw);
+            println!("  {} No protocol provided, using: {}", style("ℹ").dim(), style(&raw).cyan());
+        }
 
         // Basic validation
         if raw.starts_with("socks5://") || raw.starts_with("socks4://")

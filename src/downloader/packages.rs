@@ -99,6 +99,20 @@ pub async fn download(
     Ok(())
 }
 
+pub async fn download_deb_test(
+    client: &reqwest::Client,
+    pkg: &str,
+    arch: &str,
+) -> Result<String> {
+    let api_url = format!("https://packages.ubuntu.com/jammy/{}/{}/download", arch, pkg);
+    if let Some(body) = fetch_html_with_retry(client, &api_url).await? {
+        if let Some(url) = extract_deb_url(&body, arch).or_else(|| extract_deb_url(&body, "all")) {
+            return Ok(url);
+        }
+    }
+    anyhow::bail!("Could not find .deb URL in HTML")
+}
+
 /// Download a .deb from the Ubuntu/Debian pool mirror.
 async fn download_deb(
     client: &reqwest::Client,
@@ -140,6 +154,22 @@ fn extract_deb_url(html: &str, arch: &str) -> Option<String> {
     None
 }
 
+pub async fn download_rpm_test(
+    client: &reqwest::Client,
+    pkg: &str,
+    mirror_base: &str,
+) -> Result<String> {
+    let first = pkg.chars().next().unwrap_or('a');
+    let index_url = format!("{}/{}/", mirror_base, first);
+
+    if let Some(body) = fetch_html_with_retry(client, &index_url).await? {
+        if let Some(filename) = extract_rpm_filename(&body, pkg) {
+            return Ok(format!("{}/{}/{}", mirror_base, first, filename));
+        }
+    }
+    anyhow::bail!("Could not find .rpm filename in HTML index")
+}
+
 /// Download an RPM from Rocky/RHEL mirrors.
 async fn download_rpm(
     client: &reqwest::Client,
@@ -169,9 +199,7 @@ async fn fetch_html_with_retry(client: &reqwest::Client, url: &str) -> Result<Op
         match client.get(url).send().await {
             Ok(r) => {
                 if r.status().is_success() {
-                    if let Ok(body) = r.text().await {
-                        return Ok(Some(body));
-                    }
+                    return Ok(Some(r.text().await?));
                 } else if r.status().is_client_error() {
                     return Ok(None); // e.g., 404, do not retry forever
                 }
@@ -207,6 +235,14 @@ fn extract_rpm_filename(html: &str, pkg: &str) -> Option<String> {
         }
     }
     None
+}
+
+pub async fn download_apk_test(
+    _client: &reqwest::Client,
+    pkg: &str,
+    mirror_base: &str,
+) -> Result<String> {
+    Ok(format!("{}/{}.apk", mirror_base, pkg))
 }
 
 /// Download an APK from Alpine CDN.

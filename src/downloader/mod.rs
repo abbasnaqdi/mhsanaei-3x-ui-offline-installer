@@ -3,7 +3,7 @@ pub mod packages;
 pub mod ssl;
 
 use anyhow::Result;
-use crate::manifest::{Manifest, STEP_INSTALL_SH, STEP_PACKAGES, STEP_SSL};
+use crate::manifest::{Manifest, STEP_PACKAGES, STEP_SSL};
 use crate::wizard::state::{BuildConfig, PackageMode, SslConfig};
 
 /// Download / generate all required files into the output directory.

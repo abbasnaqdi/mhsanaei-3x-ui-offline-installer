@@ -99,8 +99,9 @@ fn build_script(c: &BuildConfig, resolved_version: &str) -> String {
     s.push_str("    # Try to detect current version\n");
     s.push_str("    current_v=$(\"$xui_folder/x-ui\" v 2>/dev/null | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+' | head -n1 || echo \"Unknown\")\n");
     s.push_str("    echo -e \"${yellow}⚠️  Existing 3x-ui installation detected!${plain}\"\n");
+    let bundle_v = resolved_version.trim_start_matches('v');
     s.push_str(&format!("    echo -e \"   Installed Version: ${{cyan}}v${{current_v#v}}${{plain}}\"\n"));
-    s.push_str(&format!("    echo -e \"   Bundle Version:    ${{cyan}}v${{{}#v}}${{plain}}\"\n\n", resolved_version));
+    s.push_str(&format!("    echo -e \"   Bundle Version:    ${{cyan}}v{}${{plain}}\"\n\n", bundle_v));
     s.push_str("    echo -e \"What would you like to do?\"\n");
     s.push_str("    echo -e \"  ${cyan}[1] Update${plain} (Keep database, settings, and users)\"\n");
     s.push_str("    echo -e \"  ${cyan}[2] Reinstall${plain} (Clean install, overwrite everything)\"\n");

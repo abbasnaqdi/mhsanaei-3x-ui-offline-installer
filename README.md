@@ -14,8 +14,11 @@ This tool eliminates the need for internet access on target servers by pre-packa
 ### Key Hardening Features:
 - **🧠 Smart Update Engine:** Detects existing installations and offers safe updates (preserving DB/users) or clean reinstalls.
 - **🌐 Multi-Repo Discovery:** Intelligent scraping of multiple streams (BaseOS/AppStream) for RHEL-based resilience.
-- **🔄 Network Persistence:** 3-tier retry mechanism for reliable bundling even on unstable connections.
-- **🔒 Integrated SSL:** Automated self-signed certificate generation or custom certificate bundling.
+- **🔄 Infinite Network Resilience:** Bullet-proof downloader that continuously retries partial downloads instead of failing, ensuring successful bundling even on highly unstable or restricted networks.
+- **🔒 Advanced SSL Management:** 
+  - Automated **Self-Signed** generation with **Dynamic mode** (defer generation to target server to match its IP automatically).
+  - Built-in **Let's Encrypt DNS-01 Challenge** (Generates trusted certs natively utilizing DoH over SOCKS5/HTTP proxy).
+  - Custom certificate bundling.
 
 ---
 

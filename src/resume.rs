@@ -404,11 +404,19 @@ pub fn config_from_manifest(manifest: &Manifest, dir: &str) -> Result<BuildConfi
             privkey_path:   format!("{}/ssl/privkey.pem",   dir),
         }
     } else if ssl_str.starts_with("self-signed(") {
-        let cn = ssl_str
+        let inner = ssl_str
             .trim_start_matches("self-signed(")
+            .trim_end_matches(')');
+        let mut parts = inner.split('|');
+        let cn = parts.next().unwrap_or("").to_string();
+        let dynamic = parts.next().unwrap_or("false") == "true";
+        SslConfig::SelfSigned { common_name: cn, dynamic }
+    } else if ssl_str.starts_with("letsencrypt(") {
+        let domain = ssl_str
+            .trim_start_matches("letsencrypt(")
             .trim_end_matches(')')
             .to_string();
-        SslConfig::SelfSigned { common_name: cn }
+        SslConfig::LetsEncrypt { domain }
     } else {
         SslConfig::None
     };

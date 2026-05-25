@@ -25,3 +25,7 @@ hex            = "0.4"
 chrono         = { version = "0.4",  features = ["serde"] }
 tar            = "0.4"
 flate2         = "1.0"
+instant-acme = "0.8.5"
+acme2 = "0.5.1"
+base64 = "0.22.1"
+openssl = "0.10.80"

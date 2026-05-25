@@ -53,7 +53,7 @@ pub fn ask_proxy() -> Result<Option<ProxyConfig>> {
     }
 
     let kind_items = vec![
-        "SOCKS5  (Example: socks5://127.0.0.1:1080)",
+        "SOCKS5  (Example: socks5h://127.0.0.1:1080)",
         "HTTP    (Example: http://127.0.0.1:8080)",
     ];
     let kind_sel = Select::with_theme(&theme)
@@ -64,7 +64,7 @@ pub fn ask_proxy() -> Result<Option<ProxyConfig>> {
 
     let kind = if kind_sel == 0 { ProxyKind::Socks5 } else { ProxyKind::Http };
     let default_url = if kind == ProxyKind::Socks5 {
-        "socks5://127.0.0.1:1080"
+        "socks5h://127.0.0.1:1080"
     } else {
         "http://127.0.0.1:8080"
     };
@@ -78,19 +78,25 @@ pub fn ask_proxy() -> Result<Option<ProxyConfig>> {
 
         // If no protocol is provided, prepend based on kind
         if !raw.contains("://") {
-            let prefix = if kind == ProxyKind::Socks5 { "socks5://" } else { "http://" };
+            let prefix = if kind == ProxyKind::Socks5 { "socks5h://" } else { "http://" };
             raw = format!("{}{}", prefix, raw);
             println!("  {} No protocol provided, using: {}", style("ℹ").dim(), style(&raw).cyan());
         }
 
+        // Auto-convert socks5:// to socks5h:// to prevent DNS leaks in restricted networks
+        if raw.starts_with("socks5://") {
+            raw = raw.replace("socks5://", "socks5h://");
+            println!("  {} Auto-converted to {} to prevent DNS issues.", style("ℹ").dim(), style(&raw).cyan());
+        }
+
         // Basic validation
-        if raw.starts_with("socks5://") || raw.starts_with("socks4://")
+        if raw.starts_with("socks5h://") || raw.starts_with("socks4://")
             || raw.starts_with("http://")  || raw.starts_with("https://")
         {
             break raw;
         }
         println!(
-            "  {} Invalid address. Must start with socks5:// or http://",
+            "  {} Invalid address. Must start with socks5h:// or http://",
             style("✗").red()
         );
     };
@@ -107,7 +113,7 @@ pub fn ask_proxy() -> Result<Option<ProxyConfig>> {
     match test_proxy(&cfg).await_or_run() {
         Ok(ms) => {
             println!(
-                "  {} Connection successful! Latency: {}ms",
+                "  {} Connection successful! HTTP Round Trip: {}ms",
                 style("✓").green().bold(),
                 style(ms).yellow()
             );
@@ -155,33 +161,54 @@ pub fn ask_proxy() -> Result<Option<ProxyConfig>> {
 
 // ─── Connection test (sync wrapper for use in the wizard) ────────────────────
 
-struct SyncResult(Result<u64>);
+struct SyncResult(Result<u64, String>);
 
-/// Synchronously test the proxy by making a GET to GitHub API.
+/// Synchronously test the proxy by making a GET to a fast 204 endpoint.
 fn test_proxy(cfg: &ProxyConfig) -> SyncResult {
     let url = cfg.url.clone();
     SyncResult(std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
-            .build()?;
+            .build()
+            .map_err(|e| e.to_string())?;
         rt.block_on(async {
-            let client = build_client_inner(&url, Duration::from_secs(8))?;
+            let client = match build_client_inner(&url, Duration::from_secs(15)) {
+                Ok(c) => c,
+                Err(e) => return Err(format!("Proxy Config Error: {}", e)),
+            };
+            
             let start = std::time::Instant::now();
-            client
-                .get("https://api.github.com")
-                .header("User-Agent", "xui-offline-builder/0.1")
+            let res = client
+                .get("http://cp.cloudflare.com/generate_204")
+                .header("User-Agent", "Mozilla/5.0")
                 .send()
-                .await?
-                .error_for_status()?;
-            Ok(start.elapsed().as_millis() as u64)
+                .await;
+
+            match res {
+                Ok(resp) => {
+                    match resp.error_for_status() {
+                        Ok(_) => Ok(start.elapsed().as_millis() as u64),
+                        Err(e) => Err(format!("HTTP Error (Status {}): Make sure the proxy is working.", e.status().map(|s| s.as_u16()).unwrap_or(0))),
+                    }
+                }
+                Err(e) => {
+                    let mut detailed = format!("Failed: {}", e);
+                    if e.is_timeout() {
+                        detailed = "Timeout (15s): The proxy server did not respond in time.".to_string();
+                    } else if e.is_connect() {
+                        detailed = "Connection Refused or Unreachable: Is your proxy app running on this port?".to_string();
+                    }
+                    Err(detailed)
+                }
+            }
         })
     })
     .join()
-    .unwrap_or_else(|_| Err(anyhow::anyhow!("thread panicked"))))
+    .unwrap_or_else(|_| Err("Thread panicked during proxy test".to_string())))
 }
 
 impl SyncResult {
-    fn await_or_run(self) -> Result<u64> {
+    fn await_or_run(self) -> Result<u64, String> {
         self.0
     }
 }

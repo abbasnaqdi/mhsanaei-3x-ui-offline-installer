@@ -195,49 +195,18 @@ async fn download_rpm(
 }
 
 async fn fetch_html_with_retry(client: &reqwest::Client, url: &str) -> Result<Option<String>> {
-    let mut attempts = 0;
-    const MAX_RETRIES: u32 = 3;
-
-    loop {
-        match client.get(url).send().await {
-            Ok(r) => {
-                if r.status().is_success() {
-                    return Ok(Some(r.text().await?));
-                } else if r.status().is_client_error() {
-                    // 404 or other client errors mean it's probably really not there
-                    return Ok(None);
-                } else if r.status().is_server_error() && attempts < MAX_RETRIES {
-                    // Server error (5xx) — let's retry
-                    attempts += 1;
-                    println!(
-                        "  {} Server busy ({}). Retrying ({}/{})...",
-                        style("ℹ").yellow(),
-                        r.status(),
-                        attempts,
-                        MAX_RETRIES
-                    );
-                } else {
-                    return Ok(None);
-                }
-            }
-            Err(e) => {
-                if attempts < MAX_RETRIES {
-                    attempts += 1;
-                    println!(
-                        "  {} Connection error ({}). Retrying ({}/{})...",
-                        style("ℹ").yellow(),
-                        if e.is_timeout() { "Timeout" } else { "Network" },
-                        attempts,
-                        MAX_RETRIES
-                    );
-                } else {
-                    return Err(anyhow::anyhow!("Failed to fetch {} after {} retries: {}", url, MAX_RETRIES, e));
-                }
-            }
+    crate::downloader::network::with_smart_retry(|| async {
+        let r = client.get(url).send().await?;
+        if r.status().is_success() {
+            Ok(Some(r.text().await?))
+        } else if r.status().is_client_error() {
+            Ok(None) // 404 or other client errors mean it's probably really not there
+        } else {
+            // Treat 5xx as an error so we retry. error_for_status() converts it to a ReqwestError
+            let r = r.error_for_status()?; 
+            Ok(Some(r.text().await?))
         }
-
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-    }
+    }, "fetch HTML index").await
 }
 
 fn extract_rpm_filename(html: &str, pkg: &str) -> Option<String> {

@@ -1,3 +1,4 @@
+pub mod network;
 pub mod xui;
 pub mod packages;
 pub mod ssl;
@@ -43,8 +44,20 @@ pub async fn download_all(config: &BuildConfig, manifest: &mut Manifest) -> Resu
                     "ssl/privkey.pem".to_string(),
                 ])?;
             }
-            SslConfig::SelfSigned { common_name } => {
-                ssl::generate_self_signed(common_name, out)?;
+            SslConfig::SelfSigned { common_name, dynamic } => {
+                if *dynamic {
+                    println!("  {} SSL — Dynamic generation requested, deferring to target server.", console::style("⏭️").dim());
+                    manifest.mark_done(out, STEP_SSL, vec![])?;
+                } else {
+                    ssl::generate_self_signed(common_name, out)?;
+                    manifest.mark_done(out, STEP_SSL, vec![
+                        "ssl/fullchain.pem".to_string(),
+                        "ssl/privkey.pem".to_string(),
+                    ])?;
+                }
+            }
+            SslConfig::LetsEncrypt { domain } => {
+                ssl::generate_lets_encrypt(domain, out, &config.proxy).await?;
                 manifest.mark_done(out, STEP_SSL, vec![
                     "ssl/fullchain.pem".to_string(),
                     "ssl/privkey.pem".to_string(),

@@ -192,7 +192,11 @@ fn build_script(c: &BuildConfig, resolved_version: &str) -> String {
 
     // Final output
     let protocol = match c.ssl { SslConfig::None => "http", _ => "https" };
-    let access_link = format!("{}://{}:{}/{}", protocol, c.server_host, c.panel_port, c.panel_web_base_path);
+    let host_var = match c.ssl {
+        SslConfig::SelfSigned { dynamic: true, .. } => "$TARGET_HOST",
+        _ => &c.server_host,
+    };
+    let access_link = format!("{}://{}:{}/{}", protocol, host_var, c.panel_port, c.panel_web_base_path);
 
     s.push_str("echo \"\"\n");
     s.push_str("if [[ \"$ACTION\" == \"update\" ]]; then\n");
@@ -253,7 +257,7 @@ fn build_ssl_section(c: &BuildConfig) -> String {
         SslConfig::None => {
             "# SSL Disabled — Panel runs on HTTP\n".to_string()
         }
-        SslConfig::Custom { .. } | SslConfig::SelfSigned { .. } => {
+        SslConfig::Custom { .. } | SslConfig::SelfSigned { dynamic: false, .. } | SslConfig::LetsEncrypt { .. } => {
             let mut s = String::new();
             s.push_str("setup_ssl() {\n");
             s.push_str("    local cert_dest=\"/root/cert/bundle\"\n");
@@ -266,6 +270,29 @@ fn build_ssl_section(c: &BuildConfig) -> String {
             s.push_str("        -webCert \"$cert_dest/fullchain.pem\" \\\n");
             s.push_str("        -webCertKey \"$cert_dest/privkey.pem\" > /dev/null 2>&1 || true\n");
             s.push_str("    echo \"  SSL certificate installed\"\n");
+            s.push_str("}\n");
+            s
+        }
+        SslConfig::SelfSigned { dynamic: true, .. } => {
+            let mut s = String::new();
+            s.push_str("setup_ssl() {\n");
+            s.push_str("    local cert_dest=\"/root/cert/bundle\"\n");
+            s.push_str("    mkdir -p \"$cert_dest\"\n");
+            s.push_str("    echo -e \"\\n${blue}┌─ Dynamic SSL Generation ─────────────────────────────┐${plain}\"\n");
+            s.push_str("    while true; do\n");
+            s.push_str("        read -p \"Enter Target Server IP or Domain for SSL: \" TARGET_HOST\n");
+            s.push_str("        TARGET_HOST=$(echo \"$TARGET_HOST\" | xargs)\n");
+            s.push_str("        if [[ -n \"$TARGET_HOST\" ]]; then break; fi\n");
+            s.push_str("        echo -e \"${red}Host cannot be empty.${plain}\"\n");
+            s.push_str("    done\n");
+            s.push_str("    echo -e \"Generating Self-Signed Certificate for ${yellow}$TARGET_HOST${plain}...\"\n");
+            s.push_str("    openssl req -x509 -newkey rsa:2048 -nodes -keyout \"$cert_dest/privkey.pem\" -out \"$cert_dest/fullchain.pem\" -days 3650 -subj \"/CN=$TARGET_HOST\" 2>/dev/null\n");
+            s.push_str("    chmod 644 \"$cert_dest/fullchain.pem\"\n");
+            s.push_str("    chmod 600 \"$cert_dest/privkey.pem\"\n");
+            s.push_str("    /usr/local/x-ui/x-ui cert \\\n");
+            s.push_str("        -webCert \"$cert_dest/fullchain.pem\" \\\n");
+            s.push_str("        -webCertKey \"$cert_dest/privkey.pem\" > /dev/null 2>&1 || true\n");
+            s.push_str("    echo -e \"  ${green}✓ SSL certificate generated and installed for $TARGET_HOST${plain}\"\n");
             s.push_str("}\n");
             s
         }

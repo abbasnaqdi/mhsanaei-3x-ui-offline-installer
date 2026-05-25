@@ -253,8 +253,10 @@ impl From<&BuildConfig> for SerializableConfig {
             ssl_kind:           match &c.ssl {
                 SslConfig::None            => "none".to_string(),
                 SslConfig::Custom { .. }   => "custom".to_string(),
-                SslConfig::SelfSigned { common_name } =>
-                    format!("self-signed({})", common_name),
+                SslConfig::SelfSigned { common_name, dynamic } =>
+                    format!("self-signed({}|{})", common_name, dynamic),
+                SslConfig::LetsEncrypt { domain } =>
+                    format!("letsencrypt({})", domain),
             },
             server_host:        c.server_host.clone(),
             output_dir:         c.output_dir.clone(),

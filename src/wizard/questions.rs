@@ -137,7 +137,12 @@ pub async fn run() -> Result<BuildConfig> {
     // ── Step 6: SSL ──────────────────────────────────────────────────────────
     println!("{}", style("┌─ Step 6/7 — SSL Settings ───────────────────────────────┐").bold().blue());
     println!();
-    let ssl_items = vec!["No SSL", "Custom SSL", "Self-Signed (Recommended)"];
+    let ssl_items = vec![
+        "No SSL",
+        "Custom SSL",
+        "Self-Signed (Recommended)",
+        "Let's Encrypt (For domains/subdomains only)"
+    ];
     let ssl_sel = Select::with_theme(&theme).items(&ssl_items).default(2).interact()?;
     let ssl = match ssl_sel {
         0 => SslConfig::None,
@@ -146,7 +151,23 @@ pub async fn run() -> Result<BuildConfig> {
             let key:  String = Input::with_theme(&theme).with_prompt("Privkey Path").interact_text()?;
             SslConfig::Custom { fullchain_path: cert.trim().into(), privkey_path: key.trim().into() }
         }
-        _ => SslConfig::SelfSigned { common_name: server_host.clone() },
+        2 => {
+            println!();
+            let dynamic = Confirm::with_theme(&theme)
+                .with_prompt("Make installer reusable? (Generate SSL certificate dynamically during installation on target server)")
+                .default(false)
+                .interact()?;
+            SslConfig::SelfSigned { common_name: server_host.clone(), dynamic }
+        }
+        _ => {
+            println!();
+            let is_ip = server_host.split('.').count() == 4 && server_host.split('.').all(|part| part.parse::<u8>().is_ok());
+            if is_ip {
+                println!("  {} Let's Encrypt requires a valid domain or subdomain, not an IP.", style("✗").red());
+                anyhow::bail!("Invalid domain for Let's Encrypt.");
+            }
+            SslConfig::LetsEncrypt { domain: server_host.clone() }
+        }
     };
     println!();
 

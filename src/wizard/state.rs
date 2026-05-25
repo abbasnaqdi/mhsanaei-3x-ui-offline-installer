@@ -154,5 +154,11 @@ pub enum SslConfig {
     SelfSigned {
         /// IP or domain for the CN/SAN
         common_name: String,
+        /// Generate the certificate dynamically on the target server during installation
+        dynamic: bool,
+    },
+    /// Use Let's Encrypt DNS-01 Challenge
+    LetsEncrypt {
+        domain: String,
     },
 }

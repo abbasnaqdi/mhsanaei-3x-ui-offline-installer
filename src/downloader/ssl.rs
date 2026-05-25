@@ -70,3 +70,142 @@ pub fn generate_self_signed(common_name: &str, out_dir: &str) -> Result<()> {
 
     Ok(())
 }
+
+use acme2::{AccountBuilder, DirectoryBuilder, OrderBuilder, OrderStatus, AuthorizationStatus, ChallengeStatus};
+use serde::Deserialize;
+use std::time::Duration;
+use tokio::time::sleep;
+use sha2::{Digest, Sha256};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use crate::proxy::{build_client, ProxyConfig};
+
+#[derive(Deserialize)]
+struct DohResponse {
+    #[serde(rename = "Answer")]
+    answer: Option<Vec<DohAnswer>>,
+}
+
+#[derive(Deserialize)]
+struct DohAnswer {
+    data: String,
+}
+
+pub async fn generate_lets_encrypt(domain: &str, out_dir: &str, proxy: &Option<ProxyConfig>) -> Result<()> {
+    if let Some(p) = proxy {
+        std::env::set_var("HTTP_PROXY", &p.url);
+        std::env::set_var("HTTPS_PROXY", &p.url);
+        std::env::set_var("ALL_PROXY", &p.url);
+    }
+
+    println!("  {} Connecting to Let's Encrypt...", style("→").cyan());
+    
+    let dir = DirectoryBuilder::new("https://acme-v02.api.letsencrypt.org/directory".to_string()).build().await?;
+    let mut builder = AccountBuilder::new(dir);
+    builder.contact(vec![format!("mailto:admin@{}", domain)]);
+    builder.terms_of_service_agreed(true);
+    let account = builder.build().await?;
+
+    let mut builder = OrderBuilder::new(account);
+    builder.add_dns_identifier(domain.to_string());
+    let order = builder.build().await?;
+
+    let authorizations = order.authorizations().await?;
+    let auth = authorizations.into_iter().next().unwrap();
+    let challenge = auth.get_challenge("dns-01").unwrap();
+    
+    let key_auth = challenge.key_authorization()?.unwrap();
+    let digest = Sha256::digest(key_auth.as_bytes());
+    let txt_value = URL_SAFE_NO_PAD.encode(&digest);
+    let txt_name = format!("_acme-challenge.{}", domain);
+
+    println!("  {}", style("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━").yellow());
+    println!("  {} {}", style("ℹ️  Let's Encrypt DNS-01 Challenge:").bold(), "");
+    println!("  {}", style("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━").yellow());
+    println!("  Please add the following TXT record to your domain's DNS settings:");
+    println!();
+    println!("  Host/Name: {}", style(&txt_name).cyan().bold());
+    println!("  Value:     {}", style(&txt_value).cyan().bold());
+    println!();
+    println!("  After saving the record in Cloudflare or your DNS provider,");
+    println!("  press {} to continue...", style("Enter").bold().green());
+    
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+
+    println!("  {} Verifying DNS record locally via Cloudflare DoH (Proxy supported)...", style("→").cyan());
+    let doh_url = format!("https://cloudflare-dns.com/dns-query?name={}&type=TXT", txt_name);
+    let client = build_client(proxy)?;
+
+    let mut verified = false;
+    for _ in 1..=60 {
+        if let Ok(resp) = client.get(&doh_url).header("Accept", "application/dns-json").send().await {
+            if let Ok(doh) = resp.json::<DohResponse>().await {
+                if let Some(answers) = doh.answer {
+                    for ans in answers {
+                        let cleaned = ans.data.trim_matches('"');
+                        if cleaned == txt_value {
+                            verified = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if verified {
+            println!("  {} DNS Verification Successful!", style("✓").green());
+            break;
+        }
+        println!("  {} Record not propagated yet. Retrying in 10 seconds...", style("ℹ").yellow());
+        sleep(Duration::from_secs(10)).await;
+    }
+
+    if !verified {
+        anyhow::bail!("DNS record did not propagate after 10 minutes. Please run again later.");
+    }
+
+    println!("  {} Requesting certificate validation from Let's Encrypt...", style("→").cyan());
+    let challenge = challenge.validate().await?;
+    let challenge = challenge.wait_done(Duration::from_secs(5), 10).await?;
+    if challenge.status != ChallengeStatus::Valid {
+        anyhow::bail!("Let's Encrypt validation failed.");
+    }
+
+    let auth = auth.wait_done(Duration::from_secs(5), 10).await?;
+    if auth.status != AuthorizationStatus::Valid {
+        anyhow::bail!("Authorization failed.");
+    }
+
+    let order = order.wait_ready(Duration::from_secs(5), 5).await?;
+    if order.status != OrderStatus::Ready {
+        anyhow::bail!("Order is not ready.");
+    }
+
+    use openssl::rsa::Rsa;
+    use openssl::pkey::PKey;
+    use acme2::Csr;
+    
+    let rsa = Rsa::generate(2048)?;
+    let pkey = PKey::from_rsa(rsa)?;
+    
+    let order = order.finalize(Csr::Automatic(pkey.clone())).await?;
+    let order = order.wait_done(Duration::from_secs(5), 10).await?;
+    if order.status != OrderStatus::Valid {
+        anyhow::bail!("Order failed to finalize.");
+    }
+
+    let certs = order.certificate().await?.unwrap();
+    
+    let ssl_dir = format!("{}/ssl", out_dir);
+    fs::create_dir_all(&ssl_dir)?;
+
+    let mut fullchain = String::new();
+    for cert in certs {
+        fullchain.push_str(&String::from_utf8(cert.to_pem()?)?);
+    }
+    
+    fs::write(format!("{}/fullchain.pem", ssl_dir), fullchain)?;
+    fs::write(format!("{}/privkey.pem", ssl_dir), pkey.private_key_to_pem_pkcs8()?)?;
+
+    println!("  {} Certificate generated and saved!", style("✓").green());
+    Ok(())
+}

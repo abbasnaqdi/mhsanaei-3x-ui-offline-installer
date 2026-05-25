@@ -214,15 +214,37 @@ pub async fn run() -> Result<BuildConfig> {
             _ => {
                 let domain: String = Input::with_theme(&theme)
                     .with_prompt("Enter the Domain or Subdomain for Let's Encrypt")
+                    .validate_with(|input: &String| -> Result<(), String> {
+                        let d = input.trim();
+                        if d.is_empty() {
+                            return Err("Domain cannot be empty.".into());
+                        }
+                        // Reject if it looks like an IP
+                        if d.parse::<std::net::Ipv4Addr>().is_ok() || d.parse::<std::net::Ipv6Addr>().is_ok() {
+                            return Err("Let's Encrypt requires a valid domain, not an IP address.".into());
+                        }
+                        // Reject pure numbers
+                        if d.chars().all(|c| c.is_ascii_digit()) {
+                            return Err("Invalid domain. Please enter a valid domain like example.com".into());
+                        }
+                        // Must contain at least one dot
+                        if !d.contains('.') {
+                            return Err("Domain must contain at least one dot (e.g., example.com)".into());
+                        }
+                        // Basic label validation
+                        for label in d.split('.') {
+                            if label.is_empty() || label.starts_with('-') || label.ends_with('-') {
+                                return Err("Invalid domain label.".into());
+                            }
+                            if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+                                return Err("Domain labels can only contain letters, digits, and hyphens.".into());
+                            }
+                        }
+                        Ok(())
+                    })
                     .interact_text()?;
                 server_host = domain.trim().to_string();
-                
-                println!();
-                let is_ip = server_host.split('.').count() == 4 && server_host.split('.').all(|part| part.parse::<u8>().is_ok());
-                if is_ip {
-                    println!("  {} Let's Encrypt requires a valid domain or subdomain, not an IP.", style("✗").red());
-                    anyhow::bail!("Invalid domain for Let's Encrypt.");
-                }
+
                 SslConfig::LetsEncrypt { domain: server_host.clone() }
             }
         };
